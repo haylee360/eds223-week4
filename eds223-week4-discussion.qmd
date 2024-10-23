@@ -1,0 +1,117 @@
+---
+title: "Week 4 Discussion 223"
+author: "Haylee Oyler"
+format: html
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r}
+library(tidyverse)
+library(tmap)
+library(spData)
+library(spDataLarge)
+library(sf)
+library(stars)
+library(terra)
+library(kableExtra)
+```
+
+```{r}
+dem <- terra::rast(system.file("raster/dem.tif", package = "spDataLarge"))
+landsat <- terra::rast(system.file("raster/landsat.tif", package = "spDataLarge"))
+srtm <- terra::rast(system.file("raster/srtm.tif", package = "spDataLarge"))
+peru <- stars::read_stars(here::here("data", "PER_elv.tif"))
+peru <- rast(peru)
+```
+
+Task: 
+Plot a histogram and boxplot of dem
+Reclassify dem and compute the mean for the three classes:
+Low, where elevation is less than 300
+Medium
+High, where elevation is greater than 500
+
+```{r}
+hist(dem)
+boxplot(dem)
+```
+
+```{r}
+# create reclassification matrix
+rcl <- matrix(c(0, 300, 1, # group 1 ranges from 1000 - 1500 m
+                300, 500, 2, # group 2 ranges from 1500 - 2000 m
+                500, 2000, 3), # group 4 ranges from 2500 - 3000 m
+                ncol = 3, byrow = TRUE)
+
+# use reclassification matrix to reclassify elevation raster
+reclassified <- classify(dem, rcl = rcl)
+
+# change reclassified values into factors
+values(reclassified) <- as.factor(values(reclassified))
+```
+
+```{r}
+zonal(dem, reclassified, fun = "mean") %>%
+  kable(col.names = c("Dem", "Mean")) %>% 
+  kable_styling(bootstrap_options = "striped")
+```
+
+
+Calculate the Normalized Difference Vegetation Index (NDVI) and Normalized Difference Water Index (NDWI) of landsat and find a correlation between NDVI and NDWI
+```{r}
+# define NDVI as the normalized difference between NIR and red bands
+ndvi_fun <- function(nir, red){
+  (nir - red) / (nir + red)
+}
+
+# apply NDVI function to Landsat bands 3 & 4
+ndvi_rast <- lapp(landsat[[c(4, 3)]], fun = ndvi_fun)
+```
+
+```{r}
+# define NDVI as the normalized difference between NIR and red bands
+ndwi_fun <- function(green, nir){
+  (green - nir) / (green + nir)
+}
+
+# apply NDVI function to Landsat bands 3 & 4
+ndwi_rast <- lapp(landsat[[c(2, 4)]], fun = ndwi_fun)
+```
+
+Find the distance across all cells in peru to its nearest coastline
+```{r}
+tm_shape(ndwi_rast) +
+  tm_raster(title = "NDWI")
+```
+
+```{r}
+# Aggregate by a factor of 20 to reduce resolution and create new raster
+peru_agg <- terra::aggregate(peru, fact = 20)
+plot(peru_agg)
+```
+
+```{r}
+# Create mask of ocean (NA values)
+water_mask <- is.na(peru_agg) # returns TRUE value for NA
+# Set all FALSE values to NA
+water_mask[water_mask == 0] <- NA
+plot(water_mask)
+```
+
+```{r}
+# Find distance from each cell to ocean/coastline (default is unit = "m")
+distance_to_coast <- terra::distance(water_mask)
+```
+
+```{r}
+# Convert from meters to kilometers 
+distance_to_coast_km <- distance_to_coast/1000
+
+plot(distance_to_coast_km, main = "Distance to the coast (km)")
+```
+
+```{r}
+plot(srtm)
+```
+
